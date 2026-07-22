@@ -1,80 +1,57 @@
 const express = require('express');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const cors = require('cors');
-const Stripe = require('stripe');
-const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
+const fs = require('fs');
 const path = require('path');
-const https = require('https'); // ضفناه عشان نصحي السيرفر
+const crypto = require('crypto');
+const os = require('os');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const stripe = Stripe(process.env.STRIPE_KEY || 'sk_test_xxx'); 
+const LOG_FILE = path.join(__dirname, 'logs/security.log');
 
-// ===== 1. الحماية =====
-app.use(helmet({contentSecurityPolicy: false}));
+if (!fs.existsSync('logs')) fs.mkdirSync('logs');
+function log(type, msg, ip){
+  const line = `[${new Date().toISOString()}] [${type}] [${ip}] ${msg}\n`;
+  fs.appendFileSync(LOG_FILE, line);
+}
+
+app.use(helmet({contentSecurityPolicy: false, hsts: {maxAge: 31536000}, xssFilter: true, noSniff: true, frameguard: { action: 'deny' }}));
+app.use(rateLimit({ windowMs: 60*1000, max: 60 }));
 app.use(cors());
-app.use(express.json());
-app.use(rateLimit({windowMs: 15*60*1000, max: 200}));
+app.use(express.json({limit: '1mb'}));
 
-// ===== 2. قاعدة البيانات =====
-mongoose.connect(process.env.MONGO_URL || 'mongodb://localhost:27017/fortress')
-.then(()=>console.log("✅ Mongo Connected"))
-.catch(err=>console.log(err));
-
-const Product = mongoose.model('Product', {
-  name:String, seller:String, image:String, price:Number, count:Number
+const blockedIPs = new Set();
+const attackPatterns = [/union.*select/i, /<script/i, /\.\//, /etc\/passwd/, /cmd\.exe/, /eval\(/i];
+app.use((req, res, next) => {
+  const ip = req.ip;
+  if(blockedIPs.has(ip)) return res.status(403).send('IP Banned');
+  const url = req.url + JSON.stringify(req.body);
+  for(let pattern of attackPatterns){
+    if(pattern.test(url)){
+      log('ATTACK_BLOCKED', `Pattern: ${pattern}`, ip);
+      blockedIPs.add(ip);
+      return res.status(403).json({error: "Attack detected"});
+    }
+  }
+  next();
 });
 
-// ===== 3. الصفحات المطلوبة لـ Paddle =====
-app.get('/', (req,res)=> res.sendFile(path.join(__dirname, 'index.html')));
-
-app.get('/pricing', (req,res)=> res.send(`
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>الاسعار</title>
-<style>body{background:#050505;color:#fff;font-family:Cairo;text-align:center;padding:50px} 
-.btn{background:#0078F2;color:#fff;padding:15px 30px;border-radius:8px;text-decoration:none;font-weight:900}</style></head>
-<body><h1>SHADOWKING FORTRESS</h1><h2>رسوم نشر المنتج: 5$</h2><p>دفع لمرة واحدة لكل منتج</p><a href="/" class="btn">العودة</a></body></html>`));
-
-app.get('/privacy', (req,res)=> res.send(`
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>سياسة الخصوصية</title>
-<style>body{background:#050505;color:#fff;font-family:Cairo;padding:40px;line-height:2;max-width:800px;margin:auto}</style></head>
-<body><h1>سياسة الخصوصية</h1><p>بيانات الدفع تتم عبر Paddle/Stripe ولا نخزن بيانات بطاقتك.</p><a href="/">العودة</a></body></html>`));
-
-app.get('/terms', (req,res)=> res.send(`
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>الشروط والاحكام</title>
-<style>body{background:#050505;color:#fff;font-family:Cairo;padding:40px;line-height:2;max-width:800px;margin:auto}</style></head>
-<body><h1>الشروط والاحكام</h1><p>1. متجر لبيع تراخيص رقمية.<br>2. الدفع غير قابل للاسترداد.</p><a href="/">العودة</a></body></html>`));
-
-app.get('/success', (req,res)=> res.send(`
-<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>تم الدفع</title>
-<style>body{background:#050505;color:#00FF88;font-family:Cairo;text-align:center;padding:100px}</style></head>
-<body><h1>✅ تم الدفع بنجاح</h1><a href="/">العودة</a></body></html>`));
-
-// ===== 4. API =====
-app.post('/create-checkout-session', async (req, res) => {
-  try{
-    const session = await stripe.checkout.sessions.create({
-      line_items: [{price_data:{currency:'usd',product_data:{name:'رسوم نشر منتج'},unit_amount:500},quantity:1}],
-      mode: 'payment', 
-      success_url: `${req.headers.origin}/success`,
-      cancel_url: `${req.headers.origin}/pricing`
-    });
-    res.json({url: session.url});
-  }catch(e){res.status(500).json({error:e.message})}
-});
-
-app.get('/products', async (req,res)=> res.json(await Product.find()));
-app.get('/top', async (req,res)=> res.json([{name:"احمد",published:15},{name:"خالد",published:9}]));
-
-// ===== 5. اهم جزء: كود التصحية كل 5 ثواني =====
-const KEEP_ALIVE_URL = 'https://protection-cybersecurity.onrender.com'; // حط رابط موقعك هنا
-
-setInterval(() => {
-  https.get(KEEP_ALIVE_URL, (res) => {
-    console.log(`[${new Date().toLocaleTimeString()}] Pinged server. Status: ${res.statusCode}`);
-  }).on('error', (err) => {
-    console.log(`Ping error: ${err.message}`);
+app.get('/api/health', (req,res)=>{
+  res.json({
+    cpu: os.cpus()[0].model,
+    load: os.loadavg(),
+    ram: {total: os.totalmem(), free: os.freemem()},
+    uptime: os.uptime(),
+    status: 'SECURE'
   });
-}, 5000); // 5000ms = 5 ثواني
+});
 
-app.listen(PORT, ()=> console.log(`🚀 Server running on ${PORT}`));
+app.get('/', (req,res)=> res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/pricing', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>الاسعار</title><style>body{background:#050505;color:#fff;font-family:Cairo;text-align:center;padding:50px}.btn{background:#0078F2;color:#fff;padding:15px 30px;border-radius:8px;text-decoration:none;font-weight:900}</style></head><body><h1>رسوم نشر المنتج: 5$</h1><p>دفع لمرة واحدة عبر Paddle</p><a href="/" class="btn">العودة</a></body></html>`));
+app.get('/privacy', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>الخصوصية</title><style>body{background:#050505;color:#fff;font-family:Cairo;padding:40px;line-height:2;max-width:800px;margin:auto}</style></head><body><h1>سياسة الخصوصية</h1><p>جميع المدفوعات تتم عبر Paddle. لا نقوم بتخزين بيانات بطاقاتك. نلتزم بقوانين GDPR.</p><a href="/">العودة</a></body></html>`));
+app.get('/terms', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>الشروط</title><style>body{background:#050505;color:#fff;font-family:Cairo;padding:40px;line-height:2;max-width:800px;margin:auto}</style></head><body><h1>الشروط والاحكام</h1><p>1. منصة بيع تراخيص رقمية<br>2. الدفع غير قابل للاسترداد بعد التسليم<br>3. جميع المعاملات محمية بواسطة Paddle</p><a href="/">العودة</a></body></html>`));
+app.get('/dashboard', (req,res)=> res.sendFile(path.join(__dirname, 'dashboard.html')));
+
+app.listen(PORT, ()=> console.log(`🔒 FORTRESS ACTIVE ON PORT ${PORT}`));
