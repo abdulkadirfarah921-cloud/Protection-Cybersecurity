@@ -3,67 +3,73 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SHADOWKING FORTRESS</title>
+<title>SHADOWKING FORTRESS - متجر التراخيص</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#050505;--card:#111;--blue:#0078F2;--green:#00FF88;--text:#FFF}
 *{font-family:'Cairo';margin:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text)}
-.header{position:sticky;top:0;background:rgba(5,5,5,0.9);backdrop-filter:blur(20px);padding:20px 40px;display:flex;justify-content:space-between;border-bottom:1px solid #222}
+.header{position:sticky;top:0;background:rgba(5,5,5,0.9);backdrop-filter:blur(20px);padding:20px 40px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #222}
 .logo{font-size:1.8em;font-weight:900}.logo span{color:var(--green)}
-.btn{background:var(--blue);color:#fff;border:none;padding:12px 24px;border-radius:8px;font-weight:900;cursor:pointer}
+.btn{background:var(--blue);color:#fff;border:none;padding:12px 24px;border-radius:8px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-block}
 .btn:hover{background:#0090FF}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;padding:40px}
 .card{background:var(--card);border:1px solid #222;border-radius:16px;overflow:hidden;transition:0.3s}
 .card:hover{border-color:var(--blue);transform:translateY(-5px)}
-.card img{width:100%;aspect-ratio:16/9;object-fit:cover}
+.card img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#222}
 .card-body{padding:16px}
 .price{color:var(--green);font-weight:900;font-size:1.3em}
 .seller{color:#aaa;font-size:0.9em;margin:8px 0}
 .top-box{background:var(--card);margin:20px 40px;padding:20px;border-radius:12px;border:1px solid var(--green)}
+.footer{padding:40px;text-align:center;border-top:1px solid #222;margin-top:40px}
+.footer a{color:#aaa;margin:0 15px;text-decoration:none}
 </style>
 </head>
 <body>
 
 <div class="header">
   <div class="logo">SHADOWKING <span>FORTRESS</span></div>
-  <button class="btn" onclick="pay()">+ نشر منتج $5</button>
+  <a href="/pricing" class="btn">+ نشر منتج $5</a>
 </div>
 
 <div class="top-box">
   <h2>🏆 Top 5 البائعين</h2>
-  <div id="top"></div>
+  <div id="top">جاري التحميل...</div>
 </div>
 
-<div id="grid" class="grid"></div>
+<div id="grid" class="grid">جاري تحميل المنتجات...</div>
+
+<div class="footer">
+  <a href="/privacy">سياسة الخصوصية</a>
+  <a href="/terms">الشروط والاحكام</a>
+  <a href="/pricing">الاسعار</a>
+  <p style="margin-top:20px;color:#555">© 2026 ShadowKing Fortress</p>
+</div>
 
 <script>
-const API = "https://shadowking-api.onrender.com"; // رح نعطيك الرابط بعد
-
-async function pay(){
-  alert("رح نحولك على صفحة دفع Stripe الامنة");
-  const res = await fetch(API+"/create-checkout-session", {method:"POST"});
-  const data = await res.json();
-  window.location = data.url;
-}
+const API = window.location.origin; 
 
 async function load(){
-  const [p, t] = await Promise.all([fetch(API+"/products"), fetch(API+"/top")]);
-  const products = await p.json();
-  const top = await t.json();
-  
-  grid.innerHTML = products.map(x=>`
-    <div class="card">
-      <img src="${x.image}">
-      <div class="card-body">
-        <h3>${x.name}</h3>
-        <div class="seller">منشور بواسطة: ${x.seller} | ${x.count} منتج</div>
-        <div class="price">${x.price}$</div>
+  try{
+    const [p, t] = await Promise.all([fetch(API+"/products"), fetch(API+"/top")]);
+    const products = await p.json();
+    const top = await t.json();
+    
+    grid.innerHTML = products.length ? products.map(x=>`
+      <div class="card">
+        <img src="${x.image || 'https://via.placeholder.com/400x225/111/00FF88?text=SHADOWKING'}">
+        <div class="card-body">
+          <h3>${x.name}</h3>
+          <div class="seller">منشور بواسطة: ${x.seller} | ${x.count || 0} منتج</div>
+          <div class="price">${x.price}$</div>
+        </div>
       </div>
-    </div>
-  `).join('');
-  
-  top.innerHTML = top.map((s,i)=>`<p>#${i+1} ${s.name} - ${s.published} منتج مدفوع</p>`).join('');
+    `).join('') : '<p style="text-align:center">لا يوجد منتجات بعد</p>';
+    
+    top.innerHTML = top.map((s,i)=>`<p>#${i+1} ${s.name} - ${s.published} منتج مدفوع</p>`).join('');
+  }catch(e){
+    grid.innerHTML = '<p style="text-align:center;color:red">خطأ في تحميل البيانات</p>'
+  }
 }
 load();
 </script>

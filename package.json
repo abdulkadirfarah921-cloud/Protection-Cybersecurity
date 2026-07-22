@@ -1,1 +1,16 @@
-{"name":"fortress","dependencies":{"express":"^4","helmet":"^7","cors":"^2","stripe":"^14","mongoose":"^8","express-rate-limit":"^7"}}
+{
+  "name": "fortress",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "cors": "^2.8.5",
+    "stripe": "^14.12.0",
+    "mongoose": "^8.0.3",
+    "express-rate-limit": "^7.1.5"
+  }
+}
