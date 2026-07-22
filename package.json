@@ -1,0 +1,1 @@
+{"name":"fortress","dependencies":{"express":"^4","helmet":"^7","cors":"^2","stripe":"^14","mongoose":"^8","express-rate-limit":"^7"}}
