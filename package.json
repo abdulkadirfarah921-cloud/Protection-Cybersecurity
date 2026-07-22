@@ -1,11 +1,8 @@
 {
-  "name": "fortress-locked",
-  "version": "3.0.0",
-  "description": "ShadowKing Fortress - Locked",
+  "name": "fortress-x",
+  "version": "4.0.0",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "scripts": { "start": "node server.js" },
   "dependencies": {
     "express": "^4.18.2",
     "helmet": "^7.1.0",
