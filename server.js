@@ -56,6 +56,9 @@ function deepScan(filename, content) {
   return { risk, color, action, block: false };
 }
 
+// ===== الصفحة الرئيسية عشان ما تبقى فاضية =====
+app.get('/', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>Fortress</title><style>body{background:#000;color:#0F0;font-family:Cairo;padding:40px;text-align:center}</style></head><body><h1>🛡️ FORTRESS CYBERSECURITY SERVER</h1><p>السيرفر شغال ✅</p><a href="/buy" style="color:#0F0">رابط الدفع</a> | <a href="/login" style="color:#0F0">دخول الادمن</a></body></html>`));
+
 // ===== الصفحات العامة لـ Paddle =====
 app.get('/buy', (req,res)=> res.sendFile(path.join(__dirname, 'buy.html')));
 app.get('/terms', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>Terms</title><style>body{background:#000;color:#0F0;font-family:Cairo;padding:40px}</style></head><body><h1>Terms of Service</h1><p>By purchasing you agree to legal use only. Digital product - No refunds.</p></body></html>`));
