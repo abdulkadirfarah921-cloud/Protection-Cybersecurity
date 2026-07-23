@@ -26,6 +26,7 @@ const ADMIN_PASS_HASH = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyY9uVJ
 app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public')); // عشان ملفات السياسات
 app.use(session({ secret: crypto.randomBytes(64).toString('hex'), resave: false, saveUninitialized: false, cookie: { httpOnly: true, maxAge: 1000 * 60 * 30 } }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
@@ -40,6 +41,13 @@ function requireApiKey(req, res, next) {
   if (db.data.api_keys.includes(key)) return next();
   res.status(403).json({ error: "Invalid API Key" });
 }
+
+// ===== 0. الصفحات العامة لـ Paddle - بدون تسجيل دخول =====
+app.get('/buy', (req,res)=> res.sendFile(path.join(__dirname, 'buy.html')));
+
+app.get('/terms', (req,res)=> res.send(`<h1>Terms of Service</h1><p>By purchasing ShadowKing Fab License you agree to use it legally. Product is digital and non-refundable.</p>`));
+app.get('/privacy', (req,res)=> res.send(`<h1>Privacy Policy</h1><p>We collect email and payment info through Paddle. We do not store card details.</p>`));
+app.get('/refund', (req,res)=> res.send(`<h1>Refund Policy</h1><p>Digital products are non-refundable. Contact support for issues.</p>`));
 
 // 1. تسجيل الدخول للادمن
 app.get('/login', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>LOGIN</title><style>body{background:#000;color:#0F0;font-family:Cairo;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}.box{background:#111;padding:40px;border-radius:16px;border:2px solid #0F0;width:350px;text-align:center}input{width:90%;padding:14px;margin:10px;background:#000;border:1px solid #0F0;color:#0F0;border-radius:8px}.btn{width:95%;padding:14px;background:#0F0;color:#000;border:none;border-radius:8px;font-weight:900}</style></head><body><div class="box"><h2>🛡️ FORTRESS RANK</h2><form method="POST" action="/login"><input name="username" placeholder="Username"><input type="password" name="password" placeholder="Password"><button class="btn">دخول</button></form></div></body></html>`));
@@ -65,7 +73,6 @@ app.get('/', requireAuth, async (req,res)=>{
 app.get('/dashboard', requireAuth, (req,res)=> res.sendFile(path.join(__dirname, 'dashboard.html')));
 
 // 4. API خارجي - اي موقع يربط معانا
-// مثال: موقع تاني يبعت POST /api/publish { "publisher": "Ahmed", "api_key": "..." }
 app.post('/api/publish', requireApiKey, async (req,res)=>{
   const { publisher } = req.body;
   await db.read();
