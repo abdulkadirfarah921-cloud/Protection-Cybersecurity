@@ -6,84 +6,82 @@ const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
+const geoip = require('geoip-lite');
+const { Low } = require('lowdb');
+const { JSONFile } = require('lowdb/node');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ===== بيانات الدخول - غيرهم =====
+// قاعدة بيانات بسيطة
+const adapter = new JSONFile('db.json');
+const db = new Low(adapter);
+await db.read();
+db.data ||= { users: [], publishers: [], api_keys: ["MASTER_KEY_12345"] }
+
+// ===== بيانات الادمن =====
 const ADMIN_USER = "admin";
-const ADMIN_PASS = "Fortress@2026"; // الباسورد الحقي
-const SALT_ROUNDS = 12;
+const ADMIN_PASS_HASH = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyY9uVJ8K3aO"; // Fortress@2026
 
-// متغيرات الحماية
-const loginAttempts = new Map(); // لتتبع المحاولات
-const LOCKOUT_TIME = 15 * 60 * 1000; // 15 دقيقة حظر
-const MAX_ATTEMPTS = 3;
-
-app.use(helmet({ contentSecurityPolicy: false, hsts: { maxAge: 31536000 } }));
-app.use(express.urlencoded({ extended: true }));
+app.use(helmet());
 app.use(express.json());
-app.use(session({
-  secret: crypto.randomBytes(64).toString('hex'),
-  resave: false,
-  saveUninitialized: false,
-  cookie: { httpOnly: true, secure: false, sameSite: 'strict', maxAge: 1000 * 60 * 60 * 2 }
-}));
-
-// Rate Limit عام
+app.use(express.urlencoded({ extended: true }));
+app.use(session({ secret: crypto.randomBytes(64).toString('hex'), resave: false, saveUninitialized: false, cookie: { httpOnly: true, maxAge: 1000 * 60 * 30 } }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
-// الحارس
 function requireAuth(req, res, next) {
   if (req.session && req.session.authenticated) return next();
   res.redirect('/login');
 }
 
-// دالة فحص الحظر
-function isLocked(ip) {
-  const data = loginAttempts.get(ip);
-  if (!data) return false;
-  if (data.attempts >= MAX_ATTEMPTS && Date.now() < data.lockUntil) {
-    return true;
-  }
-  if (Date.now() > data.lockUntil) loginAttempts.delete(ip);
-  return false;
+// ===== حماية خارجية: اي موقع يتصل لازم API KEY =====
+function requireApiKey(req, res, next) {
+  const key = req.headers['x-api-key'];
+  if (db.data.api_keys.includes(key)) return next();
+  res.status(403).json({ error: "Invalid API Key" });
 }
 
-// صفحة الدخول
-app.get('/login', (req,res)=>{
-  res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>LOGIN</title><style>body{background:#000;color:#fff;font-family:Cairo;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}.box{background:#111;padding:40px;border-radius:16px;border:2px solid #FF0044;width:350px;text-align:center}input{width:90%;padding:14px;margin:10px 0;background:#222;border:1px solid #333;color:#fff;border-radius:8px;font-size:16px}.btn{width:95%;padding:14px;background:#FF0044;color:#fff;border:none;border-radius:8px;font-weight:900;cursor:pointer;font-size:16px}.error{color:#FF0044}</style></head><body><div class="box"><h2>🛡️ FORTRESS X</h2><p>مستوى الحماية: MAX</p>${req.query.error ? '<p class="error">❌ خطأ في اليوزر او الباسورد</p>' : ''}${req.query.locked ? '<p class="error">⛔ تم حظرك 15 دقيقة بسبب كثرة المحاولات</p>' : ''}<form method="POST" action="/login"><input type="text" name="username" placeholder="Username" required autocomplete="off"><input type="password" name="password" placeholder="Password" required autocomplete="off"><button class="btn">دخول</button></form></div></body></html>`);
+// 1. تسجيل الدخول للادمن
+app.get('/login', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>LOGIN</title><style>body{background:#000;color:#0F0;font-family:Cairo;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}.box{background:#111;padding:40px;border-radius:16px;border:2px solid #0F0;width:350px;text-align:center}input{width:90%;padding:14px;margin:10px;background:#000;border:1px solid #0F0;color:#0F0;border-radius:8px}.btn{width:95%;padding:14px;background:#0F0;color:#000;border:none;border-radius:8px;font-weight:900}</style></head><body><div class="box"><h2>🛡️ FORTRESS RANK</h2><form method="POST" action="/login"><input name="username" placeholder="Username"><input type="password" name="password" placeholder="Password"><button class="btn">دخول</button></form></div></body></html>`));
+app.post('/login', async (req,res)=>{
+  const {username, password} = req.body;
+  if(username === ADMIN_USER && await bcrypt.compare(password, ADMIN_PASS_HASH)){
+    req.session.authenticated = true;
+    res.redirect('/');
+  } else res.redirect('/login');
 });
 
-// تسجيل الدخول مع حماية ضد التخمين
-app.post('/login', async (req,res)=>{
-  const ip = req.ip;
-  if(isLocked(ip)) return res.redirect('/login?locked=1');
+// 2. الصفحة الرئيسية - توب الناشرين
+app.get('/', requireAuth, async (req,res)=>{
+  await db.read();
+  const top = db.data.publishers.sort((a,b)=>b.products - a.products).slice(0,10);
+  let html = `<h1>🏆 توب 10 ناشرين</h1><table border="1" style="color:#0F0;width:100%">`;
+  top.forEach((p,i)=> html += `<tr><td>${i+1}</td><td>${p.name}</td><td>${p.products} منتج</td></tr>`);
+  html += `</table><a href="/dashboard">لوحة التحكم</a> <a href="/logout">خروج</a>`;
+  res.send(html);
+});
 
-  const {username, password} = req.body;
-  const isValid = (username === ADMIN_USER) && (password === ADMIN_PASS);
+// 3. لوحة التحكم للادمن
+app.get('/dashboard', requireAuth, (req,res)=> res.sendFile(path.join(__dirname, 'dashboard.html')));
 
-  if(isValid){
-    loginAttempts.delete(ip);
-    req.session.authenticated = true;
-    return res.redirect('/');
-  } else {
-    const data = loginAttempts.get(ip) || { attempts: 0 };
-    data.attempts += 1;
-    if(data.attempts >= MAX_ATTEMPTS) data.lockUntil = Date.now() + LOCKOUT_TIME;
-    loginAttempts.set(ip, data);
-    await new Promise(r => setTimeout(r, 2000)); // تأخير 2 ثانية ضد البوتات
-    return res.redirect('/login?error=1');
-  }
+// 4. API خارجي - اي موقع يربط معانا
+// مثال: موقع تاني يبعت POST /api/publish { "publisher": "Ahmed", "api_key": "..." }
+app.post('/api/publish', requireApiKey, async (req,res)=>{
+  const { publisher } = req.body;
+  await db.read();
+  let pub = db.data.publishers.find(p=>p.name === publisher);
+  if(pub) pub.products += 1;
+  else db.data.publishers.push({ name: publisher, products: 1 });
+  await db.write();
+  res.json({ success: true, message: `${publisher} +1 product` });
+});
+
+// 5. API لاخذ الترتيب
+app.get('/api/leaderboard', requireApiKey, async (req,res)=>{
+  await db.read();
+  res.json(db.data.publishers.sort((a,b)=>b.products - a.products));
 });
 
 app.get('/logout', (req,res)=>{ req.session.destroy(); res.redirect('/login'); });
 
-// كل الصفحات محمية
-app.get('/', requireAuth, (req,res)=> res.sendFile(path.join(__dirname, 'index.html')));
-app.get('/dashboard', requireAuth, (req,res)=> res.sendFile(path.join(__dirname, 'dashboard.html')));
-app.get('/pricing', requireAuth, (req,res)=> res.send(`<h1 style="color:#fff;text-align:center">الاسعار 5$</h1><a href="/">رجوع</a>`));
-app.get('/privacy', requireAuth, (req,res)=> res.send(`<h1 style="color:#fff;text-align:center">الخصوصية</h1><a href="/">رجوع</a>`));
-app.get('/terms', requireAuth, (req,res)=> res.send(`<h1 style="color:#fff;text-align:center">الشروط</h1><a href="/">رجوع</a>`));
-
-app.listen(PORT, ()=> console.log(`🔒 FORTRESS X ACTIVE ON ${PORT}`));
+app.listen(PORT, ()=> console.log(`🔒 FORTRESS RANK ACTIVE`));
