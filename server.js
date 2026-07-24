@@ -1,14 +1,13 @@
 const express = require('express');
 const helmet = require('helmet');
 const session = require('express-session');
-const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 
 const app = express();
-app.set('trust proxy', 1); // مهم عشان Render
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const DB_FILE = 'db.json';
 
@@ -28,13 +27,13 @@ let db = readDB();
 
 // ===== بيانات الادمن =====
 const ADMIN_USER = "admin";
-const ADMIN_PASS_HASH = "$2b$12$8K1p0F5vZ9xY2wQ7rT4uOuL3mN6bV9cX1zA4sD7gH0jK3lM5nP8qR"; // باسورد: Fortress@2026_New
+const ADMIN_PASS = "Fortress@2026_New"; // كلمة السر اللي طلبتها
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
-app.use(session({ secret: crypto.randomBytes(64).toString('hex'), resave: false, saveUninitialized: false, cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 } }));
+app.use(session({ secret: crypto.randomBytes(64).toString('hex'), resave: false, saveUninitialized: false, cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 
 function requireAuth(req, res, next) {
@@ -42,13 +41,13 @@ function requireAuth(req, res, next) {
   res.redirect('/login');
 }
 
-// ===== نظام الفحص القوي =====
+// ===== نظام الفحص =====
 function deepScan(filename, content) {
   const highRisk = ["eval(", "exec(", "rm -rf", "child_process", "fs.unlinkSync", "password=", "api_key=", "process.env"];
   const mediumRisk = ["http://", "document.cookie", "localStorage", "alert(", "fetch("];
   
   if (highRisk.some(k => content.includes(k))) {
-    return { risk: "عالي", color: "red", action: "حذف فوري - الملف غير امن نهائيا" };
+    return { risk: "عالي", color: "red", action: "حذف فوري - الملف غير امن" };
   }
   if (mediumRisk.some(k => content.includes(k))) {
     return { risk: "قوي", color: "orange", action: "تحذير احمر: امسح الملف فورا" };
@@ -59,10 +58,9 @@ function deepScan(filename, content) {
   return { risk: "امن", color: "green", action: "مسموح بالنشر" };
 }
 
-// ===== الصفحة الرئيسية =====
+// ===== الصفحات =====
 app.get('/', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>Fortress</title><style>body{background:#000;color:#0F0;font-family:Cairo;padding:40px;text-align:center} a{color:#0F0;margin:0 10px}</style></head><body><h1>🛡️ FORTRESS CYBERSECURITY SERVER</h1><p>السيرفر شغال 100% ✅</p><a href="/buy">رابط الدفع</a> | <a href="/login">دخول الادمن</a></body></html>`));
 
-// ===== الصفحات العامة لـ Paddle =====
 app.get('/buy', (req,res)=> res.sendFile(path.join(__dirname, 'buy.html')));
 app.get('/terms', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>Terms</title><style>body{background:#000;color:#0F0;font-family:Cairo;padding:40px;line-height:1.8}</style></head><body><h1>Terms of Service</h1><p>1. By purchasing you agree to legal use only.</p><p>2. Digital product - No refunds.</p><p>3. Fortress is not responsible for misuse.</p><a href="/">رجوع</a></body></html>`));
 app.get('/privacy', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>Privacy</title><style>body{background:#000;color:#0F0;font-family:Cairo;padding:40px;line-height:1.8}</style></head><body><h1>Privacy Policy</h1><p>We use Paddle for payments. We do not store card details.</p><p>We only collect email for license delivery.</p><a href="/">رجوع</a></body></html>`));
@@ -70,9 +68,10 @@ app.get('/refund', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl
 
 // LOGIN
 app.get('/login', (req,res)=> res.send(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>LOGIN</title><style>body{background:#000;color:#0F0;font-family:Cairo;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}.box{background:#111;padding:40px;border-radius:16px;border:2px solid #0F0;width:350px;text-align:center}input{width:90%;padding:14px;margin:10px;background:#000;border:1px solid #0F0;color:#0F0;border-radius:8px}.btn{width:95%;padding:14px;background:#0F0;color:#000;border:none;border-radius:8px;font-weight:900;cursor:pointer}</style></head><body><div class="box"><h2>🛡️ FORTRESS ADMIN</h2><form method="POST" action="/login"><input name="username" placeholder="Username" value="admin"><input type="password" name="password" placeholder="Password"><button class="btn">دخول</button></form></div></body></html>`));
-app.post('/login', async (req,res)=>{
+
+app.post('/login', (req,res)=>{
   const {username, password} = req.body;
-  if(username === ADMIN_USER && await bcrypt.compare(password, ADMIN_PASS_HASH)){
+  if(username === ADMIN_USER && password === ADMIN_PASS){
     req.session.authenticated = true; 
     res.redirect('/admin');
   } else res.redirect('/login');
@@ -90,7 +89,7 @@ app.get('/admin', requireAuth, (req,res)=>{
   html += `<h2>1. اكتر ناشر منتجات</h2><table><tr><th>#</th><th>الاسم</th><th>المنتجات</th></tr>` + byProducts.map((p,i)=>`<tr><td>${i+1}</td><td>${p.name}</td><td>${p.products}</td></tr>`).join('') + `</table>`;
   html += `<h2>2. اكتر ناشر تفاعلات</h2><table><tr><th>#</th><th>الاسم</th><th>التفاعلات</th></tr>` + byInteractions.map((p,i)=>`<tr><td>${i+1}</td><td>${p.name}</td><td>${p.likes||0}</td></tr>`).join('') + `</table>`;
   html += `<h2>3. اعلى تقييم</h2><table><tr><th>#</th><th>الاسم</th><th>التقييم</th></tr>` + byRating.map((p,i)=>`<tr><td>${i+1}</td><td>${p.name}</td><td>${(p.rating||0).toFixed(1)}</td></tr>`).join('') + `</table>`;
-  html += `<h2>4. بيانات الأدمن</h2><table><tr><th>User</th><th>Pass</th></tr><tr><td>${ADMIN_USER}</td><td>Fortress@2026_New</td></tr></table>`;
+  html += `<h2>4. بيانات الأدمن</h2><table><tr><th>User</th><th>Pass</th></tr><tr><td>${ADMIN_USER}</td><td>${ADMIN_PASS}</td></tr></table>`;
   html += `</body></html>`;
   res.send(html);
 });
